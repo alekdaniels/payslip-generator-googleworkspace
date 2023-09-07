@@ -1,0 +1,162 @@
+function createPDF(e) {
+  const pdfFolder = DriveApp.getFolderById('12_UVRo5Q03mcDAws7KH1Onu-WeT_SEJ-');
+  const temporaryFolder = DriveApp.getFolderById('1pUITg1JBd7JTgBaQWG3u0-FZXiw8X6eI');
+  const templateFolder = DriveApp.getFolderById('1yrZQz1s2rCnUVt-r7ZxSk-tPLyT80UGJ');
+  const spreadsheet = SpreadsheetApp.openById('1mlcj3AlmoTGmNzBTnuUfBZJTQXO_9nb4axMuLU6FVKo');
+  const sheet = spreadsheet.getSheetByName('Form Responses 1');
+  const lastRow = sheet.getLastRow();
+  const spreadsheetTimeZone = spreadsheet.getSpreadsheetTimeZone();
+
+  // From Spreadsheet Data
+  const emailAddress = sheet.getRange(lastRow, 2).getValue().toString();
+  const Name = sheet.getRange(lastRow, 3).getValue().toString();
+  const Position = sheet.getRange(lastRow, 4).getValue().toString();
+  const BilledTo = sheet.getRange(lastRow, 5).getValue().toString();
+  const from = Utilities.formatDate(sheet.getRange(lastRow, 10).getValue(), spreadsheetTimeZone, "MM-dd-yyyy");
+  const to = Utilities.formatDate(sheet.getRange(lastRow, 11).getValue(), spreadsheetTimeZone, "MM-dd-yyyy");
+  const PayPeriod = from + ' to ' + to;
+  const SubmissionDate = sheet.getRange(lastRow, 1).getValue().toString();
+  const PayoutDate = new Date(SubmissionDate);
+  PayoutDate.setDate(PayoutDate.getDate() + 1); // Adding one day to SubmissionDate
+  const Description = sheet.getRange(lastRow, 6).getValue().toString();
+  const Amount = sheet.getRange(lastRow, 7).getValue();
+  const Description2 = sheet.getRange(lastRow, 12).getValue().toString();
+  const Amount2 = sheet.getRange(lastRow, 13).getValue();
+  const Total = Amount + Amount2;
+  const ProcessedThrough = sheet.getRange(lastRow, 8).getValue().toString();
+  const NetPay = Total;
+  const BankName = sheet.getRange(lastRow, 9).getValue().toString();
+  const NetPayInWords = convertNumberToWords(NetPay);
+  const company = sheet.getRange(lastRow, 14).getValue().toString();
+  // End of From Spreadsheet Data
+
+  const templateFiles = templateFolder.getFiles();
+  let templateDoc;
+  while (templateFiles.hasNext()) {
+    const file = templateFiles.next();
+    const fileName = file.getName().toLowerCase();
+    if (fileName === company.toLowerCase()) {
+      templateDoc = file;
+      break;
+    }
+  }
+
+  if (!templateDoc) {
+    // Handle case when matching template is not found
+    throw new Error("Matching template not found for the company: " + company);
+  }
+
+  const newTempfile = templateDoc.makeCopy(temporaryFolder);
+  const openDoc = DocumentApp.openById(newTempfile.getId());
+  const body = openDoc.getBody();
+
+  // Date Formatting
+  const SubmissionDateFormat = Utilities.formatDate(new Date(Date.parse(SubmissionDate)), spreadsheetTimeZone, "MM-dd-yyyy");
+  const PayoutDateFormat = Utilities.formatDate(PayoutDate, spreadsheetTimeZone, "MM-dd-yyyy");
+  // End of Date Formatting
+
+  body.replaceText("{Name}", Name);
+  body.replaceText("{Position}", Position);
+  body.replaceText("{Billed to}", BilledTo);
+  body.replaceText("{Pay Period}", PayPeriod);
+  body.replaceText("{Submission Date}", SubmissionDateFormat);
+  body.replaceText("{Payout Date}", PayoutDateFormat);
+  body.replaceText("{Description}", Description);
+  body.replaceText("{Amount}", Amount);
+  body.replaceText("{Description }", Description2);
+  body.replaceText("{Amount }", Amount2);
+  body.replaceText("{Total}", Total);
+  body.replaceText("{Processed through}", ProcessedThrough);
+  body.replaceText("{NET PAY}", NetPay);
+  body.replaceText("{Bank name}", BankName);
+  body.replaceText("{In words}", NetPayInWords);
+
+  openDoc.saveAndClose();
+
+  const blobPDF = newTempfile.getAs(MimeType.PDF);
+  const fileName = 'Payslip - ' + SubmissionDateFormat + ' ' + Name + '.pdf';
+  const pdfFile = pdfFolder.createFile(blobPDF).setName(fileName);
+
+
+
+  //code to send email 
+  
+ const emailSubject = 'Payslip - ' + SubmissionDateFormat + ' ' + Name;
+ const htmlBody = "Dear " + Name + ",\n\n" +
+    "Attached below is a copy of the pay slip you requested.\n\n";
+
+  const recipient = emailAddress;
+
+GmailApp.sendEmail(recipient,emailSubject,htmlBody, {
+    attachments: [pdfFile.getAs(MimeType.PDF)],
+    name: 'J&J Productions Automated Emailer'
+});
+
+
+}
+
+
+
+
+
+
+
+// Function to convert a number to words
+function convertNumberToWords(number) {
+  // Array of words for numbers from 0 to 19
+  const units = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+
+  // Array of words for tens from 20 to 90
+  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+
+  // Function to convert a two-digit number to words
+  function convertTwoDigitNumberToWords(number) {
+    if (number < 20) {
+      return units[number];
+    }
+
+    const digitOne = Math.floor(number / 10);
+    const digitTwo = number % 10;
+
+    return tens[digitOne] + (digitTwo ? '-' + units[digitTwo] : '');
+  }
+
+  // Function to convert a three-digit number to words
+  function convertThreeDigitNumberToWords(number) {
+    const digitOne = Math.floor(number / 100);
+    const digitTwo = number % 100;
+
+    let result = units[digitOne] + ' hundred';
+
+    if (digitTwo) {
+      result += ' ' + convertTwoDigitNumberToWords(digitTwo);
+    }
+
+    return result;
+  }
+
+  if (number === 0) {
+    return 'zero dollars';
+  }
+
+  if (number < 0) {
+    return 'negative ' + convertNumberToWords(-number);
+  }
+
+  const dollars = Math.floor(number);
+  const cents = Math.round((number - dollars) * 100);
+
+  let result = '';
+
+  if (dollars > 0) {
+    result += convertThreeDigitNumberToWords(dollars) + ' dollars';
+  }
+
+  if (cents > 0) {
+    result += ' and ' + convertTwoDigitNumberToWords(cents) + ' cents';
+  }
+
+  return result;
+}
+
+
